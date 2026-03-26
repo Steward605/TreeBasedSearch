@@ -1,6 +1,6 @@
 def read_route_problem(file_path):
     """
-    Read a route-finding problem from a text file.
+    Read route-finding problem from text files.
 
     Returns:
     node_positions (dict[int, tuple[int, int]]):

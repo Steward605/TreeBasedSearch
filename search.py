@@ -31,7 +31,9 @@ def get_search_function(method):
 
 def run_search(file_path, search_function):
     _, graph, origin_node, destination_nodes = read_route_problem(file_path)
-    return search_function(origin_node, destination_nodes, graph)
+
+    # Explicitly pass debug=False so the output no show debug
+    return search_function(origin_node, destination_nodes, graph, debug=True)
 
 
 def print_search_result(file_path, method, goal_reached, nodes_created, path):

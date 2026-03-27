@@ -50,7 +50,7 @@ def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
         print("\nNo path to any goal found!")
     return None, nodes_created, []
 
-
+# Estimated cost from current node to the nearest goal, in a straight line
 def heuristic(node, goal_nodes, node_positions):
     if node not in node_positions:
         return 0

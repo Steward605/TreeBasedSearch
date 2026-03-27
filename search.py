@@ -1,7 +1,8 @@
 import os
 import sys
 
-from astar import *
+from bfs import breadth_first_search
+from astar import a_star_search
 from utils import *
 
 
@@ -20,7 +21,8 @@ def get_command_line_arguments():
 
 def get_search_function(method):
     search_methods = {
-        "ASTAR": a_star_search,
+        "BFS": breadth_first_search,
+        "AS": a_star_search,
     }
 
     if method not in search_methods:
@@ -29,15 +31,15 @@ def get_search_function(method):
     return search_methods[method]
 
 
-def run_search(file_path, search_function):
+def run_search(file_path, method, search_function):
     node_positions, graph, origin_node, destination_nodes = read_route_problem(file_path)
+    # print(graph)
+    
+    if method == "AS":
+        return search_function( origin_node, destination_nodes, graph, node_positions, debug=True,)
 
-    # A star search need node position but bfs dont so just need to check the name
-    if search_function.__name__ == "a_star_search":
-        return search_function(origin_node, destination_nodes, graph, node_positions, debug=True)
-    else:
-    # Explicitly pass debug=False so the output no show debug
-        return search_function(origin_node, destination_nodes, graph, debug=True)
+    # Explicitly pass debug=False when the output dont want debug
+    return search_function(origin_node, destination_nodes, graph, debug=True)
 
 
 def print_search_result(file_path, method, goal_reached, nodes_created, path):
@@ -56,7 +58,7 @@ def main():
     try:
         file_path, method = get_command_line_arguments()
         search_function = get_search_function(method)
-        goal_reached, nodes_created, path = run_search(file_path, search_function)
+        goal_reached, nodes_created, path = run_search(file_path, method, search_function)
         print_search_result(file_path, method, goal_reached, nodes_created, path)
 
     except Exception as error:

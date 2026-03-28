@@ -5,10 +5,7 @@ from utils import heuristic
 # Repeatedly performs depth-first search using an increasing f-cost bound, where f(n) = g(n) + h(n), until a path to a goal node is found, until a goal node is reached
 def ida_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
     goal_set = set(goal_nodes)
-    sorted_graph = {
-        node: sorted(neighbors, key=lambda item: item[0])
-        for node, neighbors in graph.items()
-    }
+    sorted_graph = {node: sorted(neighbors, key=lambda item: item[0]) for node, neighbors in graph.items()}
     current_path = [start_node]
     current_bound = heuristic(start_node, goal_set, node_positions)
     total_nodes_created = 1
@@ -16,7 +13,6 @@ def ida_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
         goal_found, next_bound, total_nodes_created = f_bounded_dfs(current_path, 0, current_bound, goal_set, sorted_graph, node_positions, total_nodes_created, debug)
         if goal_found and next_bound is None:
             return current_path[-1], total_nodes_created, current_path.copy()
-
         if next_bound == float("inf"):
             return None, total_nodes_created, []
         current_bound = next_bound

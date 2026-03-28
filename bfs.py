@@ -1,7 +1,6 @@
 from collections import deque
 
 def breadth_first_search(start_node, goal_nodes, graph, debug=False):
-    # set destination, start nodes
     goal_nodes = set(goal_nodes)
     frontier = deque([(start_node, [start_node])])
     explored = set()

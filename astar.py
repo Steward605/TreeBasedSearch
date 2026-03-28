@@ -1,71 +1,80 @@
 import math
-import heapq
+from utils import heuristic
 
 
 def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
     goal_set = set(goal_nodes)
-    came_from = {}
-    g_score = {start_node: 0}
-    insertion_order = 0
-    frontier = [(heuristic(start_node, goal_set, node_positions), start_node, insertion_order, 0)]
+    parent_map = {}  # Maps each node to its parent on the current best path
+    g_cost = {start_node: 0}  # Best known path cost (g(n) value) from start node to each node
+    explored = set()  # Nodes that have already been explored
     nodes_created = 1
+
+    # Each frontier entry stores: node, g_cost, f_cost
+    frontier = [{"node": start_node, "g_cost": 0, "f_cost": heuristic(start_node, goal_set, node_positions)}]
 
     if debug:
         print(f"Starting A* search from {start_node} to goals: {goal_set}")
         print("-" * 50)
 
     while frontier:
-        current_f, current_node, _, current_g = heapq.heappop(frontier)
+        frontier.sort(key=lambda entry: (entry["f_cost"], entry["node"]))
 
-        if current_g > g_score.get(current_node, float("inf")):
-            continue
+        current_entry = frontier.pop(0)
+        current_node = current_entry["node"]
+        current_g_cost = current_entry["g_cost"]
+        current_f_cost = current_entry["f_cost"]
 
         if debug:
-            print(f"Exploring node {current_node} (f={current_f:.2f}, g={current_g:.2f})")
-
+            print(f"Exploring node {current_node} (f={current_f_cost:.2f}, g={current_g_cost:.2f})")
         if current_node in goal_set:
             if debug:
                 print(f"\nGoal reached: {current_node}")
-            return current_node, nodes_created, reconstruct_path(came_from, current_node)
+            return current_node, nodes_created, reconstruct_path(parent_map, current_node)
 
-        for neighbor, edge_cost in sorted(graph.get(current_node, []), key=lambda x: x[0]):
-            tentative_g = current_g + edge_cost
-            is_new_node = neighbor not in g_score
+        explored.add(current_node)
 
-            if is_new_node or tentative_g < g_score[neighbor]:
-                came_from[neighbor] = current_node
-                g_score[neighbor] = tentative_g
-                h_score = heuristic(neighbor, goal_set, node_positions)
-                insertion_order += 1
-                heapq.heappush(frontier, (tentative_g + h_score, neighbor, insertion_order, tentative_g))
+        for neighbor_node, edge_cost in sorted(graph.get(current_node, []), key=lambda item: item[0]):
+            if neighbor_node in explored:
+                continue
 
-                if is_new_node:
-                    nodes_created += 1
+            new_g_cost = current_g_cost + edge_cost
+            heuristic_cost = heuristic(neighbor_node, goal_set, node_positions)
+            new_f_cost = new_g_cost + heuristic_cost
+
+            existing_frontier_entry = find_frontier_entry(frontier, neighbor_node)
+
+            # If neighbor is not in frontier yet, add it
+            if existing_frontier_entry is None:
+                frontier.append({"node": neighbor_node, "g_cost": new_g_cost, "f_cost": new_f_cost})
+                parent_map[neighbor_node] = current_node
+                g_cost[neighbor_node] = new_g_cost
+                nodes_created += 1
+                if debug:
+                    print(f"\tAdded node {neighbor_node} " f"(g={new_g_cost:.2f}, h={heuristic_cost:.2f}, f={new_f_cost:.2f})")
+
+            # If neighbor is already in frontier but this new path is better, replace it
+            elif new_g_cost < existing_frontier_entry["g_cost"]:
+                existing_frontier_entry["g_cost"] = new_g_cost
+                existing_frontier_entry["f_cost"] = new_f_cost
+                parent_map[neighbor_node] = current_node
+                g_cost[neighbor_node] = new_g_cost
 
                 if debug:
-                    action = "Added" if is_new_node else "Updated"
-                    print(f"  {action} {neighbor} (g={tentative_g:.2f}, h={h_score:.2f}, f={tentative_g + h_score:.2f})")
-
+                    print(f"\tUpdated node {neighbor_node} " f"(g={new_g_cost:.2f}, h={heuristic_cost:.2f}, f={new_f_cost:.2f})")
     if debug:
         print("\nNo path to any goal found!")
     return None, nodes_created, []
 
-# Estimated cost from current node to the nearest goal, in a straight line
-def heuristic(node, goal_nodes, node_positions):
-    if node not in node_positions:
-        return 0
-    nx, ny = node_positions[node]
-    return min(
-        (math.sqrt((nx - node_positions[g][0])**2 + (ny - node_positions[g][1])**2)
-         for g in goal_nodes if g in node_positions),
-        default=0
-    )
+def find_frontier_entry(frontier, target_node):
+    for entry in frontier:
+        if entry["node"] == target_node:
+            return entry
+    return None
 
-
-def reconstruct_path(came_from, current_node):
-    path = [current_node]
-    while current_node in came_from:
-        current_node = came_from[current_node]
-        path.append(current_node)
+def reconstruct_path(parent_map, goal_node):
+    path = [goal_node]
+    while goal_node in parent_map:
+        goal_node = parent_map[goal_node]
+        path.append(goal_node)
     path.reverse()
     return path

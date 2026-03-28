@@ -1,24 +1,25 @@
+import math
+
 def read_route_problem(file_path):
     """
     Read route-finding problem from text files.
 
     Returns:
     node_positions (dict[int, tuple[int, int]]):
-        Maps each node ID to its (x, y) coordinates.
-        Example: {1: (4, 1), 2: (2, 2)}
+    - Maps each node ID to its (x, y) coordinates.
+    - Example: {1: (4, 1), 2: (2, 2)}
 
     graph (dict[int, list[tuple[int, int]]]):
-        Adjacency list of the graph.
-        Each key is a node ID, and each value is a list of
-        (neighbor_node, edge_cost) tuples.
-        Example: {2: [(1, 4), (3, 4)]}
+    - Adjacency list of the graph.
+    - Each key is a node ID, and each value is a list of (neighbor_node, edge_cost) tuples.
+    - Example: {2: [(1, 4), (3, 4)]}
 
     origin_node (int):
-        The start node for the search.
+    - The start node for the search.
 
     destination_nodes (list[int]):
-        A list of goal nodes.
-        Example: [5, 4]
+    - A list of goal nodes.
+    - Example: [5, 4]
     """
     node_positions = {}
     graph = {}
@@ -69,3 +70,13 @@ def read_route_problem(file_path):
         raise ValueError("Destination nodes are missing.")
 
     return node_positions, graph, origin_node, destination_nodes
+
+# Estimated cost from current node to the nearest goal, in a straight line
+def heuristic(node, goal_nodes, node_positions):
+    if node not in node_positions:
+        return 0
+    node_x, node_y = node_positions[node]
+    return min(
+        (math.sqrt((node_x - node_positions[goal][0]) ** 2 + (node_y - node_positions[goal][1]) ** 2) for goal in goal_nodes if goal in node_positions),
+        default=0
+    )

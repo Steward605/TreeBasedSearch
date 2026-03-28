@@ -7,6 +7,7 @@ def breadth_first_search(start_node, goal_nodes, graph, debug=False):
     number_of_nodes_created = 1
 
     while frontier:
+        # pop shallowest node in the queue
         current_node, current_path = frontier.popleft()
 
         if current_node in goal_nodes:

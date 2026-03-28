@@ -1,6 +1,6 @@
 ## Usage Instructions
 
-The script search.py executes the search algorithms. You run the script from the command line. The command requires a target file and a search method. The valid methods are BFS, AS, and CUS2. 
+The script search.py executes the search algorithms. Run the script from the command line, in which command will require a target file containing the problem and the search method.
 
 Use the following command structure:
 

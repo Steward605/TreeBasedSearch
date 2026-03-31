@@ -15,7 +15,7 @@ def breadth_first_search(start_node, goal_nodes, graph, debug=False):
 
         explored.add(current_node)
         outgoing_edges = graph.get(current_node, [])
-        neighbor_nodes = sorted(neighbor for neighbor, cost in outgoing_edges)
+        neighbor_nodes = sorted(neighbor for neighbor, cost in outgoing_edges) # discovered nodes are sorted in ascending node ID before being appended to frontier
 
         # states currently waiting in frontier
         frontier_states = {node for node, _ in frontier}

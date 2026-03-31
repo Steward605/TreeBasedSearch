@@ -8,38 +8,38 @@ def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
     g_cost = {start_node: 0}  # Best known path cost (g(n) value) from start node to each node
     explored = set()  # Nodes that have already been explored
     nodes_created = 1
-
-    # Each frontier entry stores: node, g_cost, f_cost
+    best_goal = None
     frontier = [{
         "node": start_node, 
         "g_cost": 0, 
         "f_cost": heuristic(start_node, goal_set, node_positions)
     }]
-
     if debug:
         print(f"Starting A* search from {start_node} to goals: {goal_set}")
         print("-" * 50)
-
     while frontier:
         frontier.sort(key=lambda entry: (entry["f_cost"], entry["node"]))
         current_entry = frontier.pop(0)
         current_node = current_entry["node"]
         current_g_cost = current_entry["g_cost"]
         current_f_cost = current_entry["f_cost"]
-
         if debug:
             print(f"Exploring node {current_node} (f={current_f_cost:.2f}, g={current_g_cost:.2f})")
+        if best_goal is not None and current_g_cost > best_goal[0]:
+            break
         if current_node in goal_set:
-            if debug:
-                print(f"\nGoal reached: {current_node}")
-            return current_node, nodes_created, reconstruct_path(parent_map, current_node)
-
+            candidate_path = reconstruct_path(parent_map, current_node)
+            candidate = (current_g_cost, current_node, candidate_path)
+            if (best_goal is None or candidate[0] < best_goal[0] or (candidate[0] == best_goal[0] and candidate[1] < best_goal[1])):
+                best_goal = candidate
+            continue
         explored.add(current_node)
-
         for neighbor_node, edge_cost in sorted(graph.get(current_node, []), key=lambda item: item[0]):
             # if neighbor_node in explored:
             #     continue
             new_g_cost = current_g_cost + edge_cost
+            if best_goal is not None and new_g_cost > best_goal[0]:
+                continue
             heuristic_cost = heuristic(neighbor_node, goal_set, node_positions)
             new_f_cost = new_g_cost + heuristic_cost
             existing_frontier_entry = find_frontier_entry(frontier, neighbor_node)
@@ -63,6 +63,11 @@ def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
                         nodes_created += 1
                         if debug:
                             print(f"\tAdded node {neighbor_node} " f"(g={new_g_cost:.2f}, h={heuristic_cost:.2f}, f={new_f_cost:.2f})")
+    if best_goal is not None:
+        goal_cost, goal_node, goal_path = best_goal
+        if debug:
+            print(f"\nGoal reached: {goal_node}")
+        return goal_node, nodes_created, goal_path
     if debug:
         print("\nNo path to any goal found!")
     return None, nodes_created, []

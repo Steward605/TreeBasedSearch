@@ -7,6 +7,7 @@ from cus2 import ida_star_search
 from utils import read_route_problem
 from dfs import depth_first_search
 from gbfs import greedy_best_first_search  
+from cus1 import cus1_search
 
 def format_path(path):
     return " ".join(str(node) for node in path)
@@ -25,7 +26,8 @@ def get_search_function(method):
         "DFS": depth_first_search,
         "GBFS": greedy_best_first_search,  
         "AS": a_star_search,
-        "CUS2": ida_star_search
+        "CUS2": ida_star_search,
+        "CUS1": cus1_search
     }
 
     if method not in search_methods:
@@ -39,6 +41,9 @@ def run_search(file_path, method, search_function):
     
     if method in ["AS", "CUS2", "GBFS"]:
         return search_function(origin_node, destination_nodes, graph, node_positions, debug=True)
+    
+    if method == "CUS1":
+        return search_function(node_positions, graph, origin_node, destination_nodes)
 
     return search_function(origin_node, destination_nodes, graph, debug=True)
 

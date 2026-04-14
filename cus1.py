@@ -1,31 +1,97 @@
+from collections import deque, defaultdict
+
 def cus1_search(node_positions, edges, origin, destinations):
-    f_frontier = {origin: [origin]}
-    b_frontier = {dest: [dest] for dest in destinations}
-    nodes_created = len(f_frontier) + len(b_frontier)
+    # Goal test: the initial state is already a destination node
+    if origin in destinations:
+        return origin, 1, [origin]
 
-    while f_frontier and b_frontier:
-        new_f_frontier = {}
-        for node in sorted(f_frontier.keys()):
-            path = f_frontier[node]
-            for neighbor, cost in sorted(edges.get(node, [])):
-                if neighbor not in f_frontier:
-                    nodes_created += 1
-                    new_path = path + [neighbor]
-                    if neighbor in b_frontier: 
-                        return neighbor, nodes_created, new_path + b_frontier[neighbor][::-1][1:]
-                    new_f_frontier[neighbor] = new_path
-        f_frontier = new_f_frontier
+    # Build the reverse adjacency list for backward search
+    # This is required because the graph may contain directed edges
+    reverse_edges = defaultdict(list)
+    for src, neighbors in edges.items():
+        for dest, cost in neighbors:
+            reverse_edges[dest].append((src, cost))
 
-        new_b_frontier = {}
-        for node in sorted(b_frontier.keys()):
-            path = b_frontier[node]
-            for neighbor, cost in sorted(edges.get(node, [])):
-                if neighbor not in b_frontier:
-                    nodes_created += 1
-                    new_path = path + [neighbor]
-                    if neighbor in f_frontier: 
-                        return neighbor, nodes_created, f_frontier[neighbor] + new_path[::-1][1:]
-                    new_b_frontier[neighbor] = new_path
-        b_frontier = new_b_frontier
+    # Sort reverse neighbors by ascending node ID
+    # This helps preserve deterministic expansion order
+    for node in reverse_edges:
+        reverse_edges[node].sort(key=lambda x: x[0])
 
+    # Forward frontier, visited set, and paths from the origin
+    f_queue = deque([origin])
+    f_visited = {origin}
+    f_paths = {origin: [origin]}
+
+    # Backward frontier, visited set, and paths to a destination
+    sorted_destinations = sorted(destinations)
+    b_queue = deque(sorted_destinations)
+    b_visited = set(sorted_destinations)
+    b_paths = {dest: [dest] for dest in sorted_destinations}
+
+    # Count the number of nodes created
+    nodes_created = 1 + len(sorted_destinations)
+
+    def expand_forward_layer():
+        nonlocal nodes_created
+        layer_size = len(f_queue)
+
+        # Expand one forward search layer
+        for _ in range(layer_size):
+            current = f_queue.popleft()
+            current_path = f_paths[current]
+
+            # Expand successors in ascending node ID order
+            for neighbor, cost in sorted(edges.get(current, []), key=lambda x: x[0]):
+                # Skip repeated states already reached by the forward search
+                if neighbor in f_visited:
+                    continue
+
+                f_visited.add(neighbor)
+                new_path = current_path + [neighbor]
+                f_paths[neighbor] = new_path
+                f_queue.append(neighbor)
+                nodes_created += 1
+
+                # A solution is found when the two search frontiers meet
+                if neighbor in b_paths:
+                    full_path = new_path + b_paths[neighbor][1:]
+                    return neighbor, full_path
+        return None, None
+
+    def expand_backward_layer():
+        nonlocal nodes_created
+        layer_size = len(b_queue)
+
+        # Expand one backward search layer
+        for _ in range(layer_size):
+            current = b_queue.popleft()
+            current_path = b_paths[current]
+
+            # Expand predecessors in ascending node ID order
+            for predecessor, cost in reverse_edges.get(current, []):
+                # Skip repeated states already reached by the backward search
+                if predecessor in b_visited:
+                    continue
+                b_visited.add(predecessor)
+                new_path = [predecessor] + current_path
+                b_paths[predecessor] = new_path
+                b_queue.append(predecessor)
+                nodes_created += 1
+
+                # A solution is found when the two search frontiers meet
+                if predecessor in f_paths:
+                    full_path = f_paths[predecessor] + new_path[1:]
+                    return predecessor, full_path
+        return None, None
+
+    # Alternate between forward and backward expansion, one layer at a time
+    while f_queue and b_queue:
+        meet_node, path = expand_forward_layer()
+        if meet_node is not None:
+            return meet_node, nodes_created, path
+        meet_node, path = expand_backward_layer()
+        if meet_node is not None:
+            return meet_node, nodes_created, path
+
+    # Failure: no destination node is reachable
     return None, nodes_created, []

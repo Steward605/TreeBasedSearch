@@ -7,7 +7,7 @@ from dfs import depth_first_search
 from bfs import breadth_first_search
 from gbfs import greedy_best_first_search
 from astar import a_star_search
-from cus1 import cus1_search
+from cus1 import bs_search
 from cus2 import ida_star_search
 from utils import read_route_problem
 
@@ -43,7 +43,7 @@ def run_search_algorithm(file_path, method, node_positions, graph, origin_node, 
             goal_reached, nodes_created, path = a_star_search(origin_node, destination_nodes, graph, node_positions, debug=True)
         elif method == "CUS1":
             nodes = list(graph.keys())
-            goal_reached, nodes_created, path = cus1_search(nodes, graph, origin_node, destination_nodes)
+            goal_reached, nodes_created, path = bs_search(nodes, graph, origin_node, destination_nodes)
         elif method == "CUS2":
             goal_reached, nodes_created, path = ida_star_search(origin_node, destination_nodes, graph, node_positions, debug=True)
         else:

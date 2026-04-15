@@ -1,6 +1,6 @@
 from collections import deque, defaultdict
 
-def cus1_search(node_positions, edges, origin, destinations):
+def bs_search(node_positions, edges, origin, destinations):
     # Goal test: return immediately if the origin is already a destination
     if origin in destinations:
         return origin, 1, [origin]
@@ -29,7 +29,7 @@ def cus1_search(node_positions, edges, origin, destinations):
 
     # Count the number of nodes created
     nodes_created = 1 + len(sorted_destinations)
-
+    
     def expand_forward_layer():
         nonlocal nodes_created
         layer_size = len(f_queue)
@@ -44,7 +44,6 @@ def cus1_search(node_positions, edges, origin, destinations):
                 # Skip repeated states already reached by the forward search
                 if neighbor in f_visited:
                     continue
-
                 f_visited.add(neighbor)
                 new_path = current_path + [neighbor]
                 f_paths[neighbor] = new_path
@@ -54,8 +53,12 @@ def cus1_search(node_positions, edges, origin, destinations):
                 # Solution is found when forward search reaches a node that is already reached by backward search
                 if neighbor in b_paths:
                     full_path = new_path + b_paths[neighbor][1:]
-                    return neighbor, full_path
+                    
+                    # Return the destination node, not just the meeting node
+                    goal_reached = full_path[-1]
+                    return goal_reached, full_path
         return None, None
+
 
     def expand_backward_layer():
         nonlocal nodes_created
@@ -80,7 +83,8 @@ def cus1_search(node_positions, edges, origin, destinations):
                 # A solution is found when the two search frontiers meet
                 if predecessor in f_paths:
                     full_path = f_paths[predecessor] + new_path[1:]
-                    return predecessor, full_path
+                    goal_reached = full_path[-1]
+                    return goal_reached, full_path
         return None, None
 
     # Alternate between forward and backward expansion, one layer at a time

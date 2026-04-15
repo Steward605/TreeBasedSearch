@@ -1,19 +1,18 @@
 from collections import deque, defaultdict
 
 def cus1_search(node_positions, edges, origin, destinations):
-    # Goal test: the initial state is already a destination node
+    # Goal test: return immediately if the origin is already a destination
     if origin in destinations:
         return origin, 1, [origin]
 
-    # Build the reverse adjacency list for backward search
-    # This is required because the graph may contain directed edges
+    # Build reverse edges so the backward search can expand predecessor nodes.
+    # This is necessary for graphs that contain directed edges
     reverse_edges = defaultdict(list)
     for src, neighbors in edges.items():
         for dest, cost in neighbors:
             reverse_edges[dest].append((src, cost))
 
-    # Sort reverse neighbors by ascending node ID
-    # This helps preserve deterministic expansion order
+    # Reverse neighbours are sorted once so expansion follows ascending node ID order
     for node in reverse_edges:
         reverse_edges[node].sort(key=lambda x: x[0])
 
@@ -52,7 +51,7 @@ def cus1_search(node_positions, edges, origin, destinations):
                 f_queue.append(neighbor)
                 nodes_created += 1
 
-                # A solution is found when the two search frontiers meet
+                # Solution is found when forward search reaches a node that is already reached by backward search
                 if neighbor in b_paths:
                     full_path = new_path + b_paths[neighbor][1:]
                     return neighbor, full_path
@@ -93,5 +92,5 @@ def cus1_search(node_positions, edges, origin, destinations):
         if meet_node is not None:
             return meet_node, nodes_created, path
 
-    # Failure: no destination node is reachable
+    # Failure: no destination node is reachable if the two searches never meet
     return None, nodes_created, []

@@ -6,9 +6,11 @@ def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
     goal_set = set(goal_nodes)
     parent_map = {}  # Maps each node to its parent on the current best path
     g_cost = {start_node: 0}  # Best known path cost (g(n) value) from start node to each node
-    explored = set()  # Nodes that have already been explored
+    explored = set()  # Nodes that have already been expanded
     nodes_created = 1
     best_goal = None
+    
+    # Generated nodes waiting to be expanded, with priority given to lower estimated total cost
     frontier = [{
         "node": start_node, 
         "g_cost": 0, 
@@ -18,6 +20,8 @@ def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
         print(f"Starting A* search from {start_node} to goals: {goal_set}")
         print("-" * 50)
     while frontier:
+        # Sort the frontier so that the node with the lowest estimated solution cost is expanded first.
+        # When f-costs are equal, the smaller node ID is chosen first.
         frontier.sort(key=lambda entry: (entry["f_cost"], entry["node"]))
         current_entry = frontier.pop(0)
         current_node = current_entry["node"]
@@ -27,6 +31,8 @@ def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
             print(f"Exploring node {current_node} (f={current_f_cost:.2f}, g={current_g_cost:.2f})")
         if best_goal is not None and current_g_cost > best_goal[0]:
             break
+        
+        # Goal test: record the cheapest goal found so far
         if current_node in goal_set:
             candidate_path = reconstruct_path(parent_map, current_node)
             candidate = (current_g_cost, current_node, candidate_path)
@@ -34,9 +40,9 @@ def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
                 best_goal = candidate
             continue
         explored.add(current_node)
+        
+        # Tiebreaking among neighbours follows ascending node ID.
         for neighbor_node, edge_cost in sorted(graph.get(current_node, []), key=lambda item: item[0]):
-            # if neighbor_node in explored:
-            #     continue
             new_g_cost = current_g_cost + edge_cost
             if best_goal is not None and new_g_cost > best_goal[0]:
                 continue
@@ -72,12 +78,14 @@ def a_star_search(start_node, goal_nodes, graph, node_positions, debug=False):
         print("\nNo path to any goal found!")
     return None, nodes_created, []
 
+# Returns the frontier entry for the given node, if it already exists
 def find_frontier_entry(frontier, target_node):
     for entry in frontier:
         if entry["node"] == target_node:
             return entry
     return None
 
+# Reconstructs the path from the start node to the goal node using parent links
 def reconstruct_path(parent_map, goal_node):
     path = [goal_node]
     while goal_node in parent_map:

@@ -2,24 +2,13 @@ import math
 
 def read_route_problem(file_path):
     """
-    Read route-finding problem from text files.
+    Reads a route-finding problem from a text file.
 
     Returns:
-    node_positions (dict[int, tuple[int, int]]):
-    - Maps each node ID to its (x, y) coordinates.
-    - Example: {1: (4, 1), 2: (2, 2)}
-
-    graph (dict[int, list[tuple[int, int]]]):
-    - Adjacency list of the graph.
-    - Each key is a node ID, and each value is a list of (neighbor_node, edge_cost) tuples.
-    - Example: {2: [(1, 4), (3, 4)]}
-
-    origin_node (int):
-    - The start node for the search.
-
-    destination_nodes (list[int]):
-    - A list of goal nodes.
-    - Example: [5, 4]
+        node_positions: Maps each node ID to its (x, y) coordinates.
+        graph: Adjacency list mapping each node to its outgoing edges.
+        origin_node: The start node.
+        destination_nodes: The goal nodes.
     """
     node_positions = {}
     graph = {}
@@ -34,6 +23,7 @@ def read_route_problem(file_path):
             if not line:
                 continue
 
+            # Identify which part of the problem specification is being read
             if line in {"Nodes:", "Edges:", "Origin:", "Destinations:"}:
                 current_section = line[:-1].lower()
                 continue
@@ -45,6 +35,7 @@ def read_route_problem(file_path):
                     int, coordinates_text.strip()[1:-1].split(",")
                 )
 
+                # Store each node's coordinates and ensure it exists in the graph
                 node_positions[node_id] = (x_coordinate, y_coordinate)
                 graph.setdefault(node_id, [])
 
@@ -63,6 +54,7 @@ def read_route_problem(file_path):
             elif current_section == "destinations":
                 destination_nodes = [int(node) for node in line.split(";")]
 
+    # The problem file must define both an origin and at least one destination
     if origin_node is None:
         raise ValueError("Origin node is missing.")
 
@@ -71,7 +63,7 @@ def read_route_problem(file_path):
 
     return node_positions, graph, origin_node, destination_nodes
 
-# Estimated cost from current node to the nearest goal, in a straight line
+# Returns the straight-line estimate from a node to the nearest goal node
 def heuristic(node, goal_nodes, node_positions):
     if node not in node_positions:
         return 0

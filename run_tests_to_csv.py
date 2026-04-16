@@ -10,6 +10,7 @@ from astar import a_star_search
 from cus1 import bs_search
 from cus2 import ida_star_search
 from utils import read_route_problem
+from improveastar import a_star_search_improved
 
 def calculate_path_cost(path, graph):
     """Calculate the total cost of a path."""
@@ -46,6 +47,8 @@ def run_search_algorithm(file_path, method, node_positions, graph, origin_node, 
             goal_reached, nodes_created, path = bs_search(nodes, graph, origin_node, destination_nodes)
         elif method == "CUS2":
             goal_reached, nodes_created, path = ida_star_search(origin_node, destination_nodes, graph, node_positions, debug=True)
+        elif method == "Improved A*":
+            goal_reached, nodes_created, path = a_star_search_improved(origin_node, destination_nodes, graph, node_positions, debug=True)
         else:
             return None, None, None, None, None
         
@@ -88,7 +91,7 @@ def main():
     
     # Define headers and algorithms
     headers = ["Test Case", "Method", "Path Found", "Cost", "Nodes Created", "Selected Goal", "Path", "Raw Output"]
-    algorithms = ["DFS", "BFS", "GBFS", "A*", "CUS1", "CUS2"]
+    algorithms = ["DFS", "BFS", "GBFS", "A*", "CUS1", "CUS2", "Improved A*"]
     
     # Run tests
     results = []

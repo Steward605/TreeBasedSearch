@@ -5,6 +5,7 @@ from bfs import breadth_first_search
 from astar import a_star_search
 from cus2 import ida_star_search
 from utils import read_route_problem
+from improveastar import a_star_search_improved
 
 def format_path(path):
     return " ".join(str(node) for node in path)
@@ -21,7 +22,8 @@ def get_search_function(method):
     search_methods = {
         "BFS": breadth_first_search,
         "AS": a_star_search,
-        "CUS2": ida_star_search
+        "CUS2": ida_star_search,
+        "AS2": a_star_search_improved
     }
 
     if method not in search_methods:
@@ -33,7 +35,7 @@ def run_search(file_path, method, search_function):
     node_positions, graph, origin_node, destination_nodes = read_route_problem(file_path)
     # print(graph)
     
-    if method == "AS" or method == "CUS2":
+    if method == "AS" or method == "CUS2" or method == "AS2":
         return search_function( origin_node, destination_nodes, graph, node_positions, debug=True)
 
     # Explicitly pass debug=False when the output dont want debug

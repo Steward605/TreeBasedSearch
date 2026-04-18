@@ -11,6 +11,14 @@ from cus1 import bs_search
 from cus2 import ida_star_search
 from utils import read_route_problem
 from improveastar import a_star_search_improved
+from multi_goal_all_algorithms import (
+    bfs_all_goals,
+    dfs_all_goals_optimal,
+    gbfs_all_goals_optimal,
+    a_star_all_goals,
+    cus1_uniform_cost_all_goals,
+    ida_star_all_goals
+)
 
 def calculate_path_cost(path, graph):
     """Calculate the total cost of a path."""
@@ -49,6 +57,24 @@ def run_search_algorithm(file_path, method, node_positions, graph, origin_node, 
             goal_reached, nodes_created, path = ida_star_search(origin_node, destination_nodes, graph, node_positions, debug=True)
         elif method == "Improved A*":
             goal_reached, nodes_created, path = a_star_search_improved(origin_node, destination_nodes, graph, node_positions, debug=True)
+        elif method == "Multi-Goal BFS":
+            goal_reached, nodes_created, path, cost = bfs_all_goals(origin_node, destination_nodes, graph, debug=True)
+            return goal_reached, nodes_created, cost, " ".join(str(node) for node in path) if path else "No path", path
+        elif method == "Multi-Goal DFS":
+            goal_reached, nodes_created, path, cost = dfs_all_goals_optimal(origin_node, destination_nodes, graph, debug=True)
+            return goal_reached, nodes_created, cost, " ".join(str(node) for node in path) if path else "No path", path
+        elif method == "Multi-Goal GBFS":
+            goal_reached, nodes_created, path, cost = gbfs_all_goals_optimal(origin_node, destination_nodes, graph, node_positions, debug=True)
+            return goal_reached, nodes_created, cost, " ".join(str(node) for node in path) if path else "No path", path
+        elif method == "Multi-Goal A*":
+            goal_reached, nodes_created, path, cost = a_star_all_goals(origin_node, destination_nodes, graph, node_positions, debug=True)
+            return goal_reached, nodes_created, cost, " ".join(str(node) for node in path) if path else "No path", path
+        elif method == "Multi-Goal CUS1":
+            goal_reached, nodes_created, path, cost = cus1_uniform_cost_all_goals(origin_node, destination_nodes, graph, debug=True)
+            return goal_reached, nodes_created, cost, " ".join(str(node) for node in path) if path else "No path", path
+        elif method == "Multi-Goal CUS2":
+            goal_reached, nodes_created, path, cost = ida_star_all_goals(origin_node, destination_nodes, graph, node_positions, debug=True)
+            return goal_reached, nodes_created, cost, " ".join(str(node) for node in path) if path else "No path", path
         else:
             return None, None, None, None, None
         
@@ -91,7 +117,7 @@ def main():
     
     # Define headers and algorithms
     headers = ["Test Case", "Method", "Path Found", "Cost", "Nodes Created", "Selected Goal", "Path", "Raw Output"]
-    algorithms = ["DFS", "BFS", "GBFS", "A*", "CUS1", "CUS2", "Improved A*"]
+    algorithms = ["DFS", "BFS", "GBFS", "A*", "CUS1", "CUS2", "Improved A*", "Multi-Goal BFS", "Multi-Goal DFS", "Multi-Goal GBFS", "Multi-Goal A*", "Multi-Goal CUS1", "Multi-Goal CUS2"]
     
     # Run tests
     results = []

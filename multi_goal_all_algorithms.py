@@ -1,10 +1,10 @@
 import math
-from collections import deque
+from collections import deque, defaultdict
 from heapq import heappush, heappop
 
 
 # =========================================================
-# HELPERS
+# HELPER FUNCTIONS
 # =========================================================
 
 def euclidean_distance(node_a, node_b, node_positions):
@@ -23,11 +23,9 @@ def euclidean_distance(node_a, node_b, node_positions):
 def nearest_remaining_goal_heuristic(current_node, visited_goals, all_goals, node_positions):
     """
     Admissible lower bound heuristic for multi-goal search.
-
     Returns the Euclidean distance from the current node to the
     nearest *unvisited* goal. This never overestimates the true
     remaining cost, so it is admissible for A* and IDA*.
-
     Returns 0 when all goals have already been visited (terminal state).
     """
     remaining_goals = set(all_goals) - set(visited_goals)
@@ -53,12 +51,11 @@ def reconstruct_path(parent_map, goal_state):
     """
     path = [goal_state[0]]       # Start the path with the goal node
     current_state = goal_state
-
+    
     # Walk backwards through the parent chain until we reach the root
     while current_state in parent_map:
         current_state = parent_map[current_state]
         path.append(current_state[0])  # Prepend the parent node
-
     path.reverse()  # Flip from goal→start to start→goal
     return path
 
@@ -66,7 +63,6 @@ def reconstruct_path(parent_map, goal_state):
 def make_start_state(start_node, goal_nodes):
     """
     Creates the initial search state as a (node, visited_goals) tuple.
-
     If the start node itself is one of the goals, it is pre-marked as visited
     so it doesn't need to be revisited later. visited_goals is a frozenset
     so it can be used as a dictionary key or set member (hashable).
@@ -75,503 +71,427 @@ def make_start_state(start_node, goal_nodes):
     visited_goals = frozenset([start_node]) if start_node in goal_nodes else frozenset()
     return (start_node, visited_goals)
 
+def extract_goal_visit_paths(full_path, goal_nodes):
+    """
+    From one complete multi-goal route, extract the first path prefix
+    that reaches each destination node.
+
+    Returns:
+        [(goal_node, path_prefix_to_that_goal), ...]
+    in the order the goals are first visited in the returned route.
+    """
+    goal_set = set(goal_nodes)
+    seen_goals = set()
+    goal_paths = []
+    for index, node in enumerate(full_path):
+        if node in goal_set and node not in seen_goals:
+            seen_goals.add(node)
+            goal_paths.append((node, full_path[:index + 1]))
+    return goal_paths
+
+def min_distance_to_any_goal(node, goal_nodes, node_positions):
+    """Heuristic distance from node to the nearest destination node."""
+    if not goal_nodes:
+        return 0
+    return min(
+        euclidean_distance(node, goal, node_positions)
+        for goal in goal_nodes
+    )
+
+
+def calculate_path_cost(path, graph):
+    """Calculate the total edge cost of a path."""
+    if path is None or len(path) < 2:
+        return 0
+    total_cost = 0
+    for current_node, next_node in zip(path, path[1:]):
+        for neighbor, edge_cost in graph.get(current_node, []):
+            if neighbor == next_node:
+                total_cost += edge_cost
+                break
+    return total_cost
+
+
+def finalize_found_goal_paths(goal_paths, nodes_created, graph):
+    """
+    Convert collected multi-goal results into the same 5-value format
+    expected by search.py:
+    (goal_reached, nodes_created, path, total_cost, goal_paths)
+    """
+    if not goal_paths:
+        return None, nodes_created, [], 0, []
+    total_cost = sum(calculate_path_cost(path, graph) for _, path in goal_paths)
+    last_found_goal = goal_paths[-1][0]
+    return last_found_goal, nodes_created, [], total_cost, goal_paths
 
 # =========================================================
-# 1. BFS (LEAST MOVES, NOT LEAST COST)
+# 1. Multi-Goals BFS
 # =========================================================
-
 def bfs_all_goals(start_node, goal_nodes, graph, debug=False):
     """
-    Breadth-First Search adapted for multi-goal traversal.
-
-    Strategy:
-    - Explores states level by level (FIFO queue).
-    - Guarantees the path with the fewest edges (moves) to visit all goals.
-    - Does NOT guarantee the minimum total edge weight in weighted graphs.
-
-    State space: (current_node, frozenset_of_visited_goals)
-    Returns: (final_node, nodes_created, path, total_cost)
+    Multi-goal BFS that records the first BFS path found to each
+    reachable destination node during a single search run.
     """
     goal_nodes = set(goal_nodes)
-    start_state = make_start_state(start_node, goal_nodes)
-
-    # Frontier holds: (state, path_so_far, accumulated_cost)
-    frontier = deque([(start_state, [start_node], 0)])
-    visited = {start_state}   # Tracks expanded states to avoid re-expansion
-    nodes_created = 1         # Count the start node
-
-    while frontier:
-        # Pop from the left — BFS processes nodes in arrival order (FIFO)
-        (current_node, visited_goals), current_path, current_cost = frontier.popleft()
-
-        # Goal check: all goals must be in the visited set
-        if visited_goals == goal_nodes:
-            return current_node, nodes_created, current_path, current_cost
-
-        # Expand neighbors in alphabetical/numeric order for determinism
-        for neighbor_node, edge_cost in sorted(graph.get(current_node, []), key=lambda item: item[0]):
-            new_visited_goals = visited_goals
-
-            # If this neighbor is an unvisited goal, mark it as visited
-            if neighbor_node in goal_nodes:
-                new_visited_goals = frozenset(set(visited_goals) | {neighbor_node})
-
-            new_state = (neighbor_node, new_visited_goals)
-
-            # Only add states we haven't seen before (avoids infinite loops)
-            if new_state not in visited:
-                visited.add(new_state)
-                frontier.append((new_state, current_path + [neighbor_node], current_cost + edge_cost))
-                nodes_created += 1
-
-        if debug:
-            print(f"[BFS] Current={current_node}, VisitedGoals={sorted(visited_goals)}, Cost={current_cost}")
-
-    # Frontier exhausted — no complete solution found
-    return None, nodes_created, [], 0
-
-
-# =========================================================
-# 2. DFS (BRANCH-AND-BOUND, LEAST COST)
-# =========================================================
-
-def dfs_all_goals_optimal(start_node, goal_nodes, graph, debug=False):
-    """
-    Depth-First Search with Branch-and-Bound for multi-goal traversal.
-
-    Strategy:
-    - Explores depth-first (recursively), backtracking after each branch.
-    - Prunes any branch whose accumulated cost already meets or exceeds
-      the best solution found so far (branch-and-bound).
-    - Tries all valid paths, so it guarantees the minimum-cost route.
-    - Cycle detection via path membership check prevents infinite loops.
-
-    Returns: (final_node, nodes_created, path, total_cost)
-    """
-    goal_nodes = set(goal_nodes)
-    start_state = make_start_state(start_node, goal_nodes)
-
-    # Shared mutable record of the best complete solution found so far
-    best_solution = {
-        "cost": float("inf"),  # Start with worst-case so any solution improves it
-        "path": None,
-        "goal": None
-    }
-
-    nodes_created = 1  # Count the start node
-
-    def dfs_recursive(current_node, visited_goals, current_path, current_cost):
-        nonlocal nodes_created
-
-        # Pruning: skip this branch if it can't beat the best known solution
-        if current_cost >= best_solution["cost"]:
-            return
-
-        # Terminal check: all goals visited — update best if this is cheaper
-        if visited_goals == goal_nodes:
-            best_solution["cost"] = current_cost
-            best_solution["path"] = current_path.copy()
-            best_solution["goal"] = current_node
-            return
-
-        # Sort neighbors in reverse so that smaller-id nodes are explored first
-        # (reverse sort + stack = ascending order of expansion)
-        for neighbor_node, edge_cost in sorted(
-            graph.get(current_node, []), key=lambda item: item[0], reverse=True
-        ):
-            new_cost = current_cost + edge_cost
-
-            # Cycle guard: skip this neighbor if it is already on the current path
-            if neighbor_node in current_path:
-                continue
-
-            new_visited_goals = visited_goals
-            if neighbor_node in goal_nodes:
-                new_visited_goals = frozenset(set(visited_goals) | {neighbor_node})
-
-            nodes_created += 1
-            current_path.append(neighbor_node)          # Go deeper
-            dfs_recursive(neighbor_node, new_visited_goals, current_path, new_cost)
-            current_path.pop()                          # Backtrack
-
-    # Kick off the recursion from the start
-    dfs_recursive(start_node, start_state[1], [start_node], 0)
-
-    if best_solution["path"] is not None:
-        return best_solution["goal"], nodes_created, best_solution["path"], best_solution["cost"]
-
-    return None, nodes_created, [], 0
-
-
-# =========================================================
-# 3. GBFS (HEURISTIC-ORDERED BRANCH-AND-BOUND, LEAST COST)
-# =========================================================
-
-def gbfs_all_goals_optimal(start_node, goal_nodes, graph, node_positions, debug=False):
-    """
-    Greedy Best-First Search with Branch-and-Bound for multi-goal traversal.
-
-    Strategy:
-    - Like DFS-optimal, but neighbors are sorted by heuristic value first,
-      so branches that look promising (closer to remaining goals) are
-      explored before less promising ones.
-    - Still exhaustive — every non-pruned branch is fully explored.
-    - The heuristic ordering often finds good solutions earlier, leading
-      to stronger pruning and fewer total nodes expanded.
-
-    Returns: (final_node, nodes_created, path, total_cost)
-    """
-    goal_nodes = set(goal_nodes)
-    start_state = make_start_state(start_node, goal_nodes)
-
-    best_solution = {
-        "cost": float("inf"),
-        "path": None,
-        "goal": None
-    }
-
+    frontier = deque([(start_node, [start_node])])
+    explored = set()
     nodes_created = 1
+    found_goals = set()
+    goal_paths = []
+    while frontier:
+        current_node, current_path = frontier.popleft()
 
-    def gbfs_recursive(current_node, visited_goals, current_path, current_cost):
-        nonlocal nodes_created
-
-        # Prune: branch cannot improve on the best known cost
-        if current_cost >= best_solution["cost"]:
-            return
-
-        # All goals visited — record if this is the best solution so far
-        if visited_goals == goal_nodes:
-            best_solution["cost"] = current_cost
-            best_solution["path"] = current_path.copy()
-            best_solution["goal"] = current_node
-            return
-
-        # Build neighbor list with heuristic values for ordering
-        neighbors = []
-        for neighbor_node, edge_cost in graph.get(current_node, []):
-            # Skip nodes already on the current path (cycle prevention)
-            if neighbor_node in current_path:
-                continue
-
-            new_visited_goals = visited_goals
-            if neighbor_node in goal_nodes:
-                new_visited_goals = frozenset(set(visited_goals) | {neighbor_node})
-
-            # Compute heuristic: distance to nearest remaining goal from neighbor
-            h_value = nearest_remaining_goal_heuristic(
-                neighbor_node, new_visited_goals, goal_nodes, node_positions
-            )
-            neighbors.append((h_value, neighbor_node, edge_cost, new_visited_goals))
-
-        # Sort by heuristic first, then node ID as a tiebreaker
-        neighbors.sort(key=lambda item: (item[0], item[1]))
-
-        for _, neighbor_node, edge_cost, new_visited_goals in neighbors:
-            new_cost = current_cost + edge_cost
-            nodes_created += 1
-            current_path.append(neighbor_node)
-            gbfs_recursive(neighbor_node, new_visited_goals, current_path, new_cost)
-            current_path.pop()  # Backtrack after exploring this branch
-
-    gbfs_recursive(start_node, start_state[1], [start_node], 0)
-
-    if best_solution["path"] is not None:
-        return best_solution["goal"], nodes_created, best_solution["path"], best_solution["cost"]
-
-    return None, nodes_created, [], 0
+        # Record the first path found to this goal, then keep searching
+        if current_node in goal_nodes and current_node not in found_goals:
+            found_goals.add(current_node)
+            goal_paths.append((current_node, current_path.copy()))
+            if len(found_goals) == len(goal_nodes):
+                break
+        if current_node in explored:
+            continue
+        explored.add(current_node)
+        frontier_states = {node for node, _ in frontier}
+        for neighbor_node, _ in sorted(graph.get(current_node, []), key=lambda item: item[0]):
+            if neighbor_node not in explored and neighbor_node not in frontier_states:
+                frontier.append((neighbor_node, current_path + [neighbor_node]))
+                nodes_created += 1
+        if debug:
+            print(f"[MBFS] Current={current_node}, FoundGoals={sorted(found_goals)}")
+    return finalize_found_goal_paths(goal_paths, nodes_created, graph)
 
 
 # =========================================================
-# 4. A* (LEAST COST)
+# 2. Multi-Goals DFS
 # =========================================================
+def dfs_all_goals(start_node, goal_nodes, graph, debug=False):
+    """
+    Multi-goal DFS that records the first DFS path found to each
+    reachable destination node during a single search run.
+    """
+    goal_nodes = set(goal_nodes)
+    frontier = [(start_node, [start_node])]
+    explored = set()
+    nodes_created = 1
+    found_goals = set()
+    goal_paths = []
+    while frontier:
+        current_node, current_path = frontier.pop()
+        
+        # Record the first path found to this goal, then keep searching
+        if current_node in goal_nodes and current_node not in found_goals:
+            found_goals.add(current_node)
+            goal_paths.append((current_node, current_path.copy()))
 
+            if len(found_goals) == len(goal_nodes):
+                break
+        if current_node in explored:
+            continue
+        explored.add(current_node)
+        frontier_states = {node for node, _ in frontier}
+
+        # Reverse sort before push so smaller IDs are expanded first
+        for neighbor_node, _ in sorted(graph.get(current_node, []), key=lambda item: item[0], reverse=True):
+            if neighbor_node not in explored and neighbor_node not in frontier_states:
+                frontier.append((neighbor_node, current_path + [neighbor_node]))
+                nodes_created += 1
+        if debug:
+            print(f"[MDFS] Current={current_node}, FoundGoals={sorted(found_goals)}")
+    return finalize_found_goal_paths(goal_paths, nodes_created, graph)
+
+# =========================================================
+# 3. Multi-Goals GBFS
+# =========================================================
+def gbfs_all_goals(start_node, goal_nodes, graph, node_positions, debug=False):
+    """
+    Multi-goal GBFS that records the first GBFS path found to each
+    reachable destination node during a single search run.
+    """
+    goal_nodes = set(goal_nodes)
+    frontier = []
+    explored = set()
+    nodes_created = 1
+    insertion_order = 0
+    found_goals = set()
+    goal_paths = []
+    start_h = min_distance_to_any_goal(start_node, goal_nodes, node_positions)
+    heappush(frontier, (start_h, start_node, insertion_order, [start_node]))
+    
+    while frontier:
+        _, current_node, _, current_path = heappop(frontier)
+
+        # Record the first path found to this goal, then keep searching
+        if current_node in goal_nodes and current_node not in found_goals:
+            found_goals.add(current_node)
+            goal_paths.append((current_node, current_path.copy()))
+            if len(found_goals) == len(goal_nodes):
+                break
+        if current_node in explored:
+            continue
+        explored.add(current_node)
+        frontier_states = {node for _, node, _, _ in frontier}
+        for neighbor_node, _ in sorted(graph.get(current_node, []), key=lambda item: item[0]):
+            if neighbor_node not in explored and neighbor_node not in frontier_states:
+                insertion_order += 1
+                neighbor_h = min_distance_to_any_goal(neighbor_node, goal_nodes, node_positions)
+                heappush(frontier, (neighbor_h, neighbor_node, insertion_order, current_path + [neighbor_node]))
+                nodes_created += 1
+        if debug:
+            print(f"[MGBFS] Current={current_node}, FoundGoals={sorted(found_goals)}")
+    return finalize_found_goal_paths(goal_paths, nodes_created, graph)
+
+
+# =========================================================
+# 4. Multi-Goals A*
+# =========================================================
 def a_star_all_goals(start_node, goal_nodes, graph, node_positions, debug=False):
     """
-    A* Search adapted for multi-goal traversal.
-
-    Strategy:
-    - Uses a min-heap (priority queue) ordered by f = g + h, where:
-        g = actual cost from start to current state
-        h = admissible heuristic (nearest remaining goal distance)
-    - Guarantees the least-cost path to visit all goals, provided h is admissible.
-    - Re-expansion is avoided by skipping states whose recorded g_cost has
-      already been improved by a previously processed path.
-
-    State: (current_node, frozenset_of_visited_goals)
-    Returns: (final_node, nodes_created, path, total_cost)
+    Multi-goal A* that records the first A* path found to each
+    reachable destination node during a single search run.
     """
     goal_nodes = set(goal_nodes)
-    start_state = make_start_state(start_node, goal_nodes)
-
-    frontier = []           # Min-heap: entries are (f, node, g, state)
-    parent_map = {}         # Maps each state to its predecessor state (for path reconstruction)
-    g_cost = {start_state: 0}   # Best known g cost for each state
+    frontier = []
+    best_g = {start_node: 0}
     nodes_created = 1
-
-    # Compute initial heuristic for the start node
-    start_h = nearest_remaining_goal_heuristic(
-        start_node, start_state[1], goal_nodes, node_positions
-    )
-    heappush(frontier, (start_h, start_node, 0, start_state))
-
+    found_goals = set()
+    goal_paths = []
+    start_h = min_distance_to_any_goal(start_node, goal_nodes, node_positions)
+    heappush(frontier, (start_h, start_node, 0, [start_node]))
+    
     while frontier:
-        # Pop the state with the lowest f = g + h
-        current_f, _, current_g, current_state = heappop(frontier)
-        current_node, visited_goals = current_state
+        current_f, current_node, current_g, current_path = heappop(frontier)
 
-        # Skip stale entries — a cheaper path to this state was already found
-        if current_g > g_cost.get(current_state, float("inf")):
+        # Skip stale entries.
+        # A recorded goal path should only come from the cheapest known route to that node.
+        if current_g > best_g.get(current_node, float("inf")):
             continue
 
-        # Goal check: all goals visited
-        if visited_goals == goal_nodes:
-            return current_node, nodes_created, reconstruct_path(parent_map, current_state), current_g
-
-        # Expand each neighbor
+        # Record the first path found to this goal, then keep searching
+        if current_node in goal_nodes and current_node not in found_goals:
+            found_goals.add(current_node)
+            goal_paths.append((current_node, current_path.copy()))
+            if len(found_goals) == len(goal_nodes):
+                break
         for neighbor_node, edge_cost in sorted(graph.get(current_node, []), key=lambda item: item[0]):
-            new_visited_goals = visited_goals
-            if neighbor_node in goal_nodes:
-                new_visited_goals = frozenset(set(visited_goals) | {neighbor_node})
-
-            new_state = (neighbor_node, new_visited_goals)
             new_g = current_g + edge_cost
-
-            # Only add to frontier if this is a cheaper path to this state
-            if new_g < g_cost.get(new_state, float("inf")):
-                g_cost[new_state] = new_g
-                parent_map[new_state] = current_state  # Record how we got here
-
-                # Compute heuristic for neighbor and push with updated f value
-                new_h = nearest_remaining_goal_heuristic(
-                    neighbor_node, new_visited_goals, goal_nodes, node_positions
-                )
+            if new_g < best_g.get(neighbor_node, float("inf")):
+                best_g[neighbor_node] = new_g
+                new_h = min_distance_to_any_goal(neighbor_node, goal_nodes, node_positions)
                 new_f = new_g + new_h
-                heappush(frontier, (new_f, neighbor_node, new_g, new_state))
+                heappush(frontier, (new_f, neighbor_node, new_g, current_path + [neighbor_node]))
                 nodes_created += 1
-
         if debug:
-            print(f"[A*] Current={current_node}, VisitedGoals={sorted(visited_goals)}, g={current_g}, f={current_f}")
-
-    return None, nodes_created, [], 0
+            print(f"[MAS] Current={current_node}, FoundGoals={sorted(found_goals)}, g={current_g}, f={current_f}")
+    return finalize_found_goal_paths(goal_paths, nodes_created, graph)
 
 
 # =========================================================
 # 5. CUS1 = UNIFORM-COST SEARCH (LEAST COST)
 # =========================================================
-
-def cus1_uniform_cost_all_goals(start_node, goal_nodes, graph, debug=False):
+def cus1_bidirectional_all_goals(start_node, goal_nodes, graph, debug=False):
     """
-    Uniform-Cost Search (UCS) adapted for multi-goal traversal.
+    Multi-goal CUS1 implemented as bidirectional search.
 
-    Strategy:
-    - Like A* but with h = 0 (no heuristic). Expands states purely by
-      accumulated path cost (g), making it equivalent to Dijkstra's algorithm.
-    - Guarantees the minimum-cost path to visit all goals.
-    - An insertion_order counter breaks ties so the heap is stable and
-      consistent when costs are equal (avoids comparing frozensets).
-
-    State: (current_node, frozenset_of_visited_goals)
-    Returns: (final_node, nodes_created, path, total_cost)
+    One forward BFS is shared by all goals, while each destination node keeps
+    its own backward BFS on the reversed graph. A goal path is recorded when
+    the forward search and that goal's backward search meet.
     """
     goal_nodes = set(goal_nodes)
-    start_state = make_start_state(start_node, goal_nodes)
+    reverse_edges = defaultdict(list)
+    for src, neighbors in graph.items():
+        for dest, edge_cost in neighbors:
+            reverse_edges[dest].append((src, edge_cost))
+    for node in reverse_edges:
+        reverse_edges[node].sort(key=lambda item: item[0])
 
-    frontier = []                       # Min-heap: (cost, node, insertion_order, state)
-    parent_map = {}
-    best_cost = {start_state: 0}       # Best known cost for each state
-    nodes_created = 1
-    insertion_order = 0                 # Monotonically increasing tie-breaker
+    # Forward search from the origin is shared by all destination nodes.
+    f_queue = deque([start_node])
+    f_visited = {start_node}
+    f_paths = {start_node: [start_node]}
+    found_goals = set()
+    goal_paths = []
+    if start_node in goal_nodes:
+        found_goals.add(start_node)
+        goal_paths.append((start_node, [start_node]))
 
-    heappush(frontier, (0, start_node, insertion_order, start_state))
-
-    while frontier:
-        current_cost, _, _, current_state = heappop(frontier)
-        current_node, visited_goals = current_state
-
-        # Skip if a cheaper path to this state has already been processed
-        if current_cost > best_cost.get(current_state, float("inf")):
+    # Each unfinished goal keeps its own backward search on the reversed graph.
+    b_searches = {}
+    for goal_node in sorted(goal_nodes):
+        if goal_node in found_goals:
             continue
+        b_searches[goal_node] = {
+            "queue": deque([goal_node]),
+            "visited": {goal_node},
+            "paths": {goal_node: [goal_node]}
+        }
+    nodes_created = 1 + len(b_searches)
 
-        # Goal check: all goals visited
-        if visited_goals == goal_nodes:
-            return current_node, nodes_created, reconstruct_path(parent_map, current_state), current_cost
+    def record_goal(goal_node, path):
+        # Store the first shortest-move path found for this goal, then stop expanding that goal's backward search.
+        if goal_node not in found_goals:
+            found_goals.add(goal_node)
+            goal_paths.append((goal_node, path.copy()))
+            b_searches.pop(goal_node, None)
 
-        for neighbor_node, edge_cost in sorted(graph.get(current_node, []), key=lambda item: item[0]):
-            new_visited_goals = visited_goals
-            if neighbor_node in goal_nodes:
-                new_visited_goals = frozenset(set(visited_goals) | {neighbor_node})
+    def expand_forward_layer():
+        nonlocal nodes_created
+        layer_size = len(f_queue)
+        for _ in range(layer_size):
+            current_node = f_queue.popleft()
+            current_path = f_paths[current_node]
 
-            new_state = (neighbor_node, new_visited_goals)
-            new_cost = current_cost + edge_cost
-
-            # Relax: push if this path to the new state is strictly cheaper
-            if new_cost < best_cost.get(new_state, float("inf")):
-                best_cost[new_state] = new_cost
-                parent_map[new_state] = current_state
-                insertion_order += 1   # Ensure stable ordering within equal-cost states
-                heappush(frontier, (new_cost, neighbor_node, insertion_order, new_state))
+            # A direct forward arrival at a goal is already a shortest-move path.
+            if current_node in goal_nodes and current_node not in found_goals:
+                record_goal(current_node, current_path)
+                if len(found_goals) == len(goal_nodes):
+                    return
+            for neighbor_node, _ in sorted(graph.get(current_node, []), key=lambda item: item[0]):
+                if neighbor_node in f_visited:
+                    continue
+                f_visited.add(neighbor_node)
+                new_path = current_path + [neighbor_node]
+                f_paths[neighbor_node] = new_path
+                f_queue.append(neighbor_node)
                 nodes_created += 1
 
-        if debug:
-            print(f"[CUS1-UCS] Current={current_node}, VisitedGoals={sorted(visited_goals)}, Cost={current_cost}")
+                # Check the new forward node against every unfinished backward search.
+                for goal_node in list(b_searches.keys()):
+                    if neighbor_node in b_searches[goal_node]["paths"]:
+                        backward_path = b_searches[goal_node]["paths"][neighbor_node]
+                        full_path = new_path + backward_path[1:]
+                        record_goal(goal_node, full_path)
+                if len(found_goals) == len(goal_nodes):
+                    return
+            if debug:
+                print(f"[MCUS1-F] Current={current_node}, FoundGoals={sorted(found_goals)}")
 
-    return None, nodes_created, [], 0
+    def expand_backward_layer(goal_node):
+        nonlocal nodes_created
+        data = b_searches.get(goal_node)
+        if data is None:
+            return
+        layer_size = len(data["queue"])
+        for _ in range(layer_size):
+            current_node = data["queue"].popleft()
+            current_path = data["paths"][current_node]
+            for predecessor_node, _ in reverse_edges.get(current_node, []):
+                if predecessor_node in data["visited"]:
+                    continue
+                data["visited"].add(predecessor_node)
+                new_path = [predecessor_node] + current_path
+                data["paths"][predecessor_node] = new_path
+                data["queue"].append(predecessor_node)
+                nodes_created += 1
+
+                # A meeting point joins the forward prefix with this goal's backward suffix.
+                if predecessor_node in f_paths:
+                    full_path = f_paths[predecessor_node] + new_path[1:]
+                    record_goal(goal_node, full_path)
+                    return
+            if debug and goal_node in b_searches:
+                print(f"[MCUS1-B] Goal={goal_node}, Current={current_node}")
+                
+    while f_queue and len(found_goals) < len(goal_nodes):
+        expand_forward_layer()
+        if len(found_goals) == len(goal_nodes):
+            break
+        for goal_node in list(b_searches.keys()):
+            expand_backward_layer(goal_node)
+            if len(found_goals) == len(goal_nodes):
+                break
+    return finalize_found_goal_paths(goal_paths, nodes_created, graph)
 
 
 # =========================================================
 # 6. CUS2 = IDA* (LEAST COST)
 # =========================================================
-
-def ida_star_all_goals(start_node, goal_nodes, graph, node_positions, debug=False):
+def cus2_ida_star_all_goals(start_node, goal_nodes, graph, node_positions, debug=False):
     """
-    Iterative Deepening A* (IDA*) adapted for multi-goal traversal.
+    Multi-goal CUS2 implemented as IDA*.
 
-    Strategy:
-    - Performs depth-first searches with a cost threshold (bound).
-    - Each iteration raises the bound to the smallest f-value that
-      exceeded the previous bound, until a solution is found.
-    - Memory-efficient: only stores the current path on the call stack,
-      not the full frontier. Suitable for large search spaces.
-    - Guarantees the least-cost solution if the heuristic is admissible.
-
-    Returns: (final_node, nodes_created, path, total_cost)
+    Each IDA* iteration explores all paths with f <= current_bound and updates
+    the cheapest path found so far for every destination node reached in that
+    iteration.
     """
     goal_nodes = set(goal_nodes)
-    start_state = make_start_state(start_node, goal_nodes)
-
-    # Pre-sort adjacency lists once so each recursive call doesn't re-sort
     sorted_graph = {
         node: sorted(neighbors, key=lambda item: item[0])
         for node, neighbors in graph.items()
     }
-
-    # The path is stored as a list of (node, visited_goals) tuples
-    current_path = [start_state]
-
-    # Initial bound = h(start): the optimistic cost to reach all goals
-    current_bound = nearest_remaining_goal_heuristic(
-        start_node, start_state[1], goal_nodes, node_positions
-    )
+    found_goal_costs = {}
+    found_goal_paths = {}
+    goal_discovery_order = []
     total_nodes_created = 1
+    current_bound = min_distance_to_any_goal(start_node, goal_nodes, node_positions)
 
-    # Iteratively tighten the bound until a solution is found or space exhausted
-    while True:
-        best = [None]  # Mutable container so ida_dfs can update it in-place
+    def record_goal(goal_node, path_cost, path):
+        # A goal can be reached more than once across different bounds, so keep
+        # the cheapest path seen so far for that destination node.
+        previous_cost = found_goal_costs.get(goal_node, float("inf"))
+        if goal_node not in found_goal_paths:
+            goal_discovery_order.append(goal_node)
+        if path_cost < previous_cost:
+            found_goal_costs[goal_node] = path_cost
+            found_goal_paths[goal_node] = path.copy()
 
-        # Run a bounded DFS; returns the next threshold if no solution found
-        _, next_bound, total_nodes_created = ida_dfs(
-            current_path=current_path,
-            path_cost_so_far=0,
-            current_bound=current_bound,
-            goal_nodes=goal_nodes,
-            sorted_graph=sorted_graph,
-            node_positions=node_positions,
-            total_nodes_created=total_nodes_created,
-            best=best,
-            debug=debug
-        )
+    def bounded_dfs(current_node, current_path, path_cost_so_far, current_bound, best_g_this_iteration):
+        nonlocal total_nodes_created
+        heuristic_cost = min_distance_to_any_goal(current_node, goal_nodes, node_positions)
+        estimated_total_cost = path_cost_so_far + heuristic_cost
+        if debug:
+            print(
+                f"[MCUS2] Current={current_node}, FoundGoals={sorted(found_goal_paths)}, "
+                f"g={path_cost_so_far:.2f}, h={heuristic_cost:.2f}, "
+                f"f={estimated_total_cost:.2f}, bound={current_bound:.2f}"
+            )
 
-        if best[0] is not None:
-            # A complete solution was found within the current bound
-            best_cost, best_path = best[0]
-            node_path = [node for node, _ in best_path]
-            return node_path[-1], total_nodes_created, node_path, best_cost
+        # Standard IDA* pruning: paths above the current bound are deferred to a later iteration.
+        if estimated_total_cost > current_bound:
+            return estimated_total_cost
 
-        if next_bound == float("inf"):
-            # No solution exists in any bound — graph is disconnected or unsolvable
-            return None, total_nodes_created, [], 0
-
-        # Raise the bound to the smallest f-value that was pruned this iteration
-        current_bound = next_bound
-
-
-def ida_dfs(current_path, path_cost_so_far, current_bound, goal_nodes,
-            sorted_graph, node_positions, total_nodes_created, best, debug=False):
-    """
-    Recursive DFS helper for IDA*.
-
-    Explores nodes depth-first, pruning any branch whose f = g + h
-    exceeds current_bound. Tracks the minimum exceeded f-value so the
-    caller knows what threshold to use in the next iteration.
-
-    current_path  : list of (node, visited_goals) tuples on the current path
-    path_cost_so_far : g-cost accumulated along current_path
-    current_bound : maximum allowed f = g + h for this iteration
-    best          : single-element list holding the best complete solution found
-                    (allows mutation from nested calls without nonlocal)
-
-    Returns: (found, next_minimum_bound, total_nodes_created)
-    """
-    current_node, visited_goals = current_path[-1]
-
-    # Compute f = g + h for the current state
-    h_value = nearest_remaining_goal_heuristic(
-        current_node, visited_goals, goal_nodes, node_positions
-    )
-    f_value = path_cost_so_far + h_value
-
-    # Prune: f exceeds the current threshold — return f as a candidate next bound
-    if f_value > current_bound:
-        return False, f_value, total_nodes_created
-
-    # All goals visited — candidate solution found
-    if visited_goals == goal_nodes:
-        candidate_path = current_path.copy()
-
-        if best[0] is None:
-            # First solution found this iteration
-            best[0] = (path_cost_so_far, candidate_path)
-        else:
-            best_cost, best_path = best[0]
-            candidate_goal = candidate_path[-1][0]
-            best_goal = best_path[-1][0]
-
-            # Keep this solution if it's cheaper, or ties on cost but ends
-            # at a node with a smaller ID (deterministic tiebreaking)
-            if (
-                path_cost_so_far < best_cost or
-                (path_cost_so_far == best_cost and candidate_goal < best_goal)
-            ):
-                best[0] = (path_cost_so_far, candidate_path)
-
-        # Return inf so caller doesn't raise the bound because of this branch
-        return False, float("inf"), total_nodes_created
-
-    # Track the smallest f-value that exceeded the bound across all children
-    smallest_exceeded_bound = float("inf")
-
-    # Extract just the node IDs on the current path for cycle detection
-    current_nodes_only = [node for node, _ in current_path]
-
-    for neighbor_node, edge_cost in sorted_graph.get(current_node, []):
-        # Skip nodes already on the path — prevents cycles
-        if neighbor_node in current_nodes_only:
-            continue
-
-        new_visited_goals = visited_goals
-        if neighbor_node in goal_nodes:
-            new_visited_goals = frozenset(set(visited_goals) | {neighbor_node})
-
-        # Push this neighbor onto the path and recurse
-        current_path.append((neighbor_node, new_visited_goals))
-        total_nodes_created += 1
-
-        _, returned_bound, total_nodes_created = ida_dfs(
-            current_path=current_path,
-            path_cost_so_far=path_cost_so_far + edge_cost,
-            current_bound=current_bound,
-            goal_nodes=goal_nodes,
-            sorted_graph=sorted_graph,
-            node_positions=node_positions,
-            total_nodes_created=total_nodes_created,
-            best=best,
-            debug=debug
-        )
-
-        # Keep track of the minimum f that exceeded the threshold
-        if returned_bound is not None:
+        # Keep only the cheapest path to each node within the current bound-limited pass.
+        if path_cost_so_far > best_g_this_iteration.get(current_node, float("inf")):
+            return float("inf")
+        if current_node in goal_nodes:
+            # Reaching one goal does not end the search, because this bound may still
+            # contain cheaper paths to other goals.
+            record_goal(current_node, path_cost_so_far, current_path)
+        smallest_exceeded_bound = float("inf")
+        for neighbor_node, edge_cost in sorted_graph.get(current_node, []):
+            if neighbor_node in current_path:
+                continue
+            new_cost = path_cost_so_far + edge_cost
+            if new_cost >= best_g_this_iteration.get(neighbor_node, float("inf")):
+                continue
+            best_g_this_iteration[neighbor_node] = new_cost
+            current_path.append(neighbor_node)
+            total_nodes_created += 1
+            returned_bound = bounded_dfs(
+                neighbor_node,
+                current_path,
+                new_cost,
+                current_bound,
+                best_g_this_iteration
+            )
             smallest_exceeded_bound = min(smallest_exceeded_bound, returned_bound)
+            current_path.pop()
+        return smallest_exceeded_bound
 
-        current_path.pop()  # Backtrack: remove neighbor from the current path
-
-    return False, smallest_exceeded_bound, total_nodes_created
+    while True:
+        best_g_this_iteration = {start_node: 0}
+        next_bound = bounded_dfs(
+            start_node,
+            [start_node],
+            0,
+            current_bound,
+            best_g_this_iteration
+        )
+        
+        # After a full iteration, every goal found within this bound has its
+        # cheapest path for this bound already recorded.
+        if len(found_goal_paths) == len(goal_nodes):
+            break
+        if next_bound == float("inf"):
+            break
+        current_bound = next_bound
+    goal_paths = [(goal_node, found_goal_paths[goal_node]) for goal_node in goal_discovery_order]
+    return finalize_found_goal_paths(goal_paths, total_nodes_created, graph)
